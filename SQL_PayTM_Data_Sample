@@ -9,10 +9,10 @@ Below is a small database of payment transactions from 2019 to 2020 of Paytm Wal
 --
 
 /* TASK 1: Retrieve an overview report of payment types
-1.1.	Retrieve a report that includes the following information: transaction type (Bảng scenario), 
+1.1.	Retrieve a report that includes the following information: transaction type (Table scenario), 
 number of transaction (bảng Fact_2019) and proportion of each type in total. These transactions must meet the following conditions: 
-•	Were created in 2019 ---> Lấy bảng Fact_2019
-•	Were paid successfully --> Bảng dim_status 
+•	Were created in 2019 ---> Table Fact_2019
+•	Were paid successfully --> Table dim_status 
 Show only the results of the top 5 types with the highest percentage of the total. */
 
 With F19 as (
