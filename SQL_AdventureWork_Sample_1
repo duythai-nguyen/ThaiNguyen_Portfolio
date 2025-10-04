@@ -1,0 +1,119 @@
+--TASK 1.1
+/*1.	Task 1: Retrieve reports on transaction scenarios and status 
+1.1.	Retrieve a report that includes the following information: customer_id, transaction_id, scenario_id, transaction_type, sub_category, category and status_description. These transactions must meet the following conditions:
+•	Were created in Jan 2020
+•	Status is successful  
+*/
+
+With Tran19 As (
+ Select 
+    Month([transaction_time]) as Month ,
+    Year([transaction_time]) as Year ,
+    Count([transaction_id]) as Number_Trans
+ From [dbo].[fact_transaction_2019] 
+ Where [status_id] = 1
+ Group by Month([transaction_time]), Year([transaction_time])
+) 
+, 
+ Tran20 As ( 
+  Select 
+    Month([transaction_time]) as Month ,
+    Year([transaction_time]) as Year ,
+    Count([transaction_id]) as Number_Trans
+  From [dbo].[fact_transaction_2020]
+  Where [status_id] = 1
+  Group by Month([transaction_time]), Year([transaction_time])
+ ) 
+
+Select * From Tran19 
+Union 
+Select * From Tran20  
+Order by year  ; 
+/* ***************************************************** 
+1.2.	Based on your previous query, let’s calculate the Success Rate of each transaction_type. The desired outcome has the following columns: 
+•	Transaction type
+•	Number of transaction
+•	Number of successful transaction
+•	Success rate = Number of successful transaction/ Number of transaction  */
+
+-- TASK 1.2.
+With Tran19 As (
+ Select 
+    Month([transaction_time]) as Month ,
+    Year([transaction_time]) as Year ,
+    [sub_category] ,
+    Count([transaction_id]) as Number_Trans
+ From [dbo].[fact_transaction_2019] f19 
+   Inner Join [dbo].[dim_scenario] sc   ON f19.[scenario_id] = sc.[scenario_id]
+ Where [status_id] = 1
+ Group by Month([transaction_time]), Year([transaction_time]), [sub_category]
+) 
+, 
+ Tran20 As ( 
+  Select 
+    Month([transaction_time]) as Month ,
+    Year([transaction_time]) as Year ,
+    [sub_category] ,
+    Count([transaction_id]) as Number_Trans
+  From [dbo].[fact_transaction_2020] f20 
+    Inner Join [dbo].[dim_scenario] sc   ON f20.[scenario_id] = sc.[scenario_id]
+  Where [status_id] = 1
+  Group by Month([transaction_time]), Year([transaction_time]),  [sub_category]
+ ) 
+
+Select * From Tran19 
+Union 
+Select * From Tran20  
+Order by year, month  ; 
+
+-- THEN MODIFY the result as the Following table: only sub-categories ...
+
+With Tran19 As (
+ Select 
+    Month([transaction_time]) as Month ,
+    Year([transaction_time]) as Year ,
+    [sub_category] ,
+    Count([transaction_id]) as Number_Trans
+ From [dbo].[fact_transaction_2019] f19 
+   Inner Join [dbo].[dim_scenario] sc   ON f19.[scenario_id] = sc.[scenario_id]
+ Where [status_id] = 1
+ Group by Month([transaction_time]), Year([transaction_time]), [sub_category]
+), 
+ Tran20 As ( 
+  Select 
+    Month([transaction_time]) as Month ,
+    Year([transaction_time]) as Year ,
+    [sub_category] ,
+    Count([transaction_id]) as Number_Trans
+  From [dbo].[fact_transaction_2020] f20 
+    Inner Join [dbo].[dim_scenario] sc   ON f20.[scenario_id] = sc.[scenario_id]
+  Where [status_id] = 1
+  Group by Month([transaction_time]), Year([transaction_time]),  [sub_category]
+ ) , 
+Elect_trans As (Select Month, Year, Number_Trans as Electricity_Trans  From Tran19 
+     Where sub_category = 'Electricity'  Group by Month, Year, Number_Trans
+   UNION Select Month, Year, Number_Trans as Electricity_Trans  From Tran20
+     Where sub_category = 'Electricity'  Group by Month, Year, Number_Trans  ) , 
+
+Internet_tran As (Select Month, Year, Number_Trans as Internet_Trans  From Tran19
+         Where sub_category = 'Internet'  Group by Month, Year, Number_Trans    
+      UNION Select  Month, Year, Number_Trans as Internet_Trans  From Tran20 
+         Where sub_category = 'Internet' Group by Month, Year, Number_Trans  ) , 
+
+Water_trans As (Select Month, Year, Number_Trans as Water_Trans  From Tran19 
+       Where sub_category = 'Water'  Group by Month, Year, Number_Trans
+     UNION  Select Month, Year, Number_Trans as Water_Trans  From Tran20 
+      Where sub_category = 'Water'  Group by Month, Year, Number_Trans   ) 
+
+SELECT distinct 
+      Elect_trans.Month, Elect_trans.Year, 
+      Electricity_Trans ,
+      Internet_Trans ,
+      Water_Trans 
+FROM Elect_trans 
+  Left join Internet_tran  On Elect_trans.Month = Internet_tran.Month and Elect_trans.Year = Internet_tran.Year
+  Left join Water_trans ON Elect_trans.Month = Water_trans.Month and Elect_trans.Year = Water_trans.Year
+
+Order by Elect_trans.Year, Elect_trans.Month 
+
+
