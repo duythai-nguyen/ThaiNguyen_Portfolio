@@ -1,0 +1,257 @@
+/* Description: 
+Paytm is an Indian multinational financial technology company. It specializes in digital payment system, e-commerce and financial services. Paytm wallet is a secure and RBI (Reserve Bank of India)-approved digital/mobile wallet that provides a myriad of financial features to fulfill every consumer’s payment needs. Paytm wallet can be topped up through UPI (Unified Payments Interface), internet banking, or credit/debit cards. Users can also transfer money from a Paytm wallet to recipient’s bank account or their own Paytm wallet. 
+Below is a small database of payment transactions from 2019 to 2020 of Paytm Wallet. The database includes 6 tables: 
+•	fact_transaction: Store information of all types of transactions: Payments, Top-up, Transfers, Withdrawals
+•	dim_scenario: Detailed description of transaction types
+•	dim_payment_channel: Detailed description of payment methods
+•	dim_platform: Detailed description of payment devices
+•	dim_status: Detailed description of the results of the transaction    */
+--
+
+/* TASK 1: Retrieve an overview report of payment types
+1.1.	Retrieve a report that includes the following information: transaction type (Bảng scenario), 
+number of transaction (bảng Fact_2019) and proportion of each type in total. These transactions must meet the following conditions: 
+•	Were created in 2019 ---> Lấy bảng Fact_2019
+•	Were paid successfully --> Bảng dim_status 
+Show only the results of the top 5 types with the highest percentage of the total. */
+
+With F19 as (
+    Select Count( fact.[transaction_id] ) as No_of_Trans 
+        , sc.[transaction_type] 
+    From [dbo].[fact_transaction_2019] fact 
+      Join [dbo].[dim_status] st   On st.status_id = fact.status_id 
+      Join [dbo].[dim_scenario] sc  On sc.[scenario_id] = fact.[scenario_id]
+    Where st.[status_description] = 'Success'
+    Group by sc.transaction_type   )
+
+Select TOP 5 
+   transaction_type 
+  ,No_of_Trans 
+  ,Format ( No_of_Trans / ( Select Sum(1.0*No_of_Trans) From F19), 'p') as Contribution
+From F19
+Order by Contribution desc  ; 
+
+/* 1.2 Retrieve a more detailed report with following information: transaction type, 
+category, number of transaction and proportion of each category in the total of that transaction type. 
+These transactions must meet the following conditions: 
+•	Were created in 2019 
+•	Were paid successfully  */ 
+
+With CAT as (
+    Select sc.[transaction_type]
+        ,  sc.[category]
+        , Count(fact.[transaction_id] ) as No_Trans_Cat
+    From [dbo].[fact_transaction_2019] fact 
+      Join [dbo].[dim_status] st   On st.status_id = fact.status_id 
+      Join [dbo].[dim_scenario] sc  On sc.[scenario_id] = fact.[scenario_id]
+    Where st.[status_description] = 'Success'
+    Group by sc.[transaction_type], sc.category  
+     ) , 
+    
+    TRANS as ( Select sc.[transaction_type]
+        , Count( fact.[transaction_id] ) as No_Trans
+    From [dbo].[fact_transaction_2019] fact 
+      Join [dbo].[dim_status] st   On st.status_id = fact.status_id 
+      Join [dbo].[dim_scenario] sc  On sc.[scenario_id] = fact.[scenario_id]
+    Where st.[status_description] = 'Success'
+    Group by sc.transaction_type  
+    )
+
+SELECT cat.category, cat.transaction_type,  cat.No_trans_cat
+      , trans.No_Trans 
+      , Format(No_trans_cat / (1.0*No_Trans), 'p') as Proportion 
+FROM CAT 
+  FULL JOIN TRANS ON CAT.transaction_type = TRANS.transaction_type
+Group by cat.category, cat.transaction_type, cat.No_trans_cat, trans.No_Trans 
+Order by cat.transaction_type, Proportion 
+
+/* TASK 2: Retrieve an overview report of customer’s payment behaviors 
+Retrieve a report that includes the following information: 
+  * the number of transactions, 
+  * the number of payment scenarios, 
+  * the number of transaction types, 
+  * the number of payment category 
+  * and the total of charged amount of each customer.
+ Were created in 2019
+ Had status description is successful
+ Had transaction type is payment
+ Only show Top 10 highest customers by the number of transactions */
+
+SELECT TOP 10 
+  f19.customer_id
+  ,Count(f19.transaction_id) as NumberTransaction
+  ,Count(distinct f19.scenario_id) as NumberScenarios
+  ,Count(distinct sc.transaction_type) as NoTransactionTypes
+  ,Count(distinct sc.category) as NoPayCategory 
+  ,SUM(1.0*f19.charged_amount) as TotalChargedAmount 
+FROM [dbo].[fact_transaction_2019]  f19 
+   Join [dbo].[dim_status] st   On st.status_id = f19.status_id 
+   Join [dbo].[dim_scenario] sc  On sc.[scenario_id] = f19.[scenario_id]
+WHERE st.[status_description] = 'Success' and sc.transaction_type = 'Payment'
+Group by f19.customer_id
+ORDER BY NumberTransaction desc ; 
+
+/* 2.2.	Above metrics  
+2.2.1. How can we group the observations in the most logical way? Binning is useful to help us deal with problem. 
+To use binning method, we need to determine how many bins for each distribution of each field.
+Retrieve a report that includes the following columns: metric, minimum value, maximum value and average value of these metrics:
+•	The total charged amount
+•	The number of transactions
+•	The number of payment scenarios
+•	The number of payment categories */
+
+WITH Base as (
+   SELECT 
+      f19.customer_id
+      ,Count(f19.transaction_id) as NumberTransaction
+      ,Count(distinct f19.scenario_id) as NumberScenarios
+      ,Count(distinct sc.transaction_type) as NoTransactionTypes
+      ,Count(distinct sc.category) as NoPayCategory 
+      ,SUM(1.0*f19.charged_amount) as TotalChargedAmount 
+  FROM [dbo].[fact_transaction_2019]  f19 
+    Join [dbo].[dim_status] st   On st.status_id = f19.status_id 
+    Join [dbo].[dim_scenario] sc  On sc.[scenario_id] = f19.[scenario_id]
+  WHERE st.[status_description] = 'Success' and sc.transaction_type = 'Payment'
+  Group by f19.customer_id
+  ORDER BY NumberTransaction desc
+)
+
+SELECT    
+  'The number of transactions' as Metric ,
+  Min(NumberTransaction) as Min_Value ,
+  Max(NumberTransaction) as Max_Value ,
+  Avg(NumberTransaction) as Avg_Value
+FROM base 
+
+UNION 
+
+SELECT    
+  'The number of Payment Scenarios' as Metric ,
+  Min(NumberScenarios) as Min_Value ,
+  Max(NumberScenarios) as Max_Value ,
+  Avg(NumberScenarios) as Avg_Value
+FROM base 
+
+UNION 
+
+SELECT    
+  'The number of Payment Categories' as Metric ,
+  Min(NoPayCategory) as Min_Value ,
+  Max(NoPayCategory) as Max_Value ,
+  Avg(NoPayCategory) as Avg_Value
+FROM base 
+
+UNION 
+
+SELECT    
+  'The Total of Charged amount' as Metric ,
+  Min(TotalChargedAmount) as Min_Value ,
+  Max(TotalChargedAmount) as Max_Value ,
+  Avg(TotalChargedAmount) as Avg_Value
+FROM base 
+
+/* 2.2.2. Bin the total charged amount and number of transactions then calculate the frequency of each field in each metric */
+
+WITH Base as (
+   SELECT 
+      f19.customer_id
+      ,SUM(1.0*f19.charged_amount) as TotalChargedAmount 
+  FROM [dbo].[fact_transaction_2019]  f19 
+    Join [dbo].[dim_status] st   On st.status_id = f19.status_id 
+    Join [dbo].[dim_scenario] sc  On sc.[scenario_id] = f19.[scenario_id]
+  WHERE st.[status_description] = 'Success' and sc.transaction_type = 'Payment'
+  Group by f19.customer_id
+) ,
+RANG As 
+( SELECT 
+  CASE When TotalChargedAmount >= 0 and TotalChargedAmount <= 1000000 then '0-1M' 
+       When TotalChargedAmount > 1000000 and TotalChargedAmount <=2000000 then '1-2M'
+       When TotalChargedAmount > 1000000 and TotalChargedAmount <=2000000 then '1-2M'
+       When TotalChargedAmount > 2000000 and TotalChargedAmount <=3000000 then '2-3M'
+       When TotalChargedAmount > 3000000 and TotalChargedAmount <=4000000 then '3-4M'
+       When TotalChargedAmount > 4000000 and TotalChargedAmount <=5000000 then '4-5M'
+       When TotalChargedAmount > 5000000 and TotalChargedAmount <=6000000 then '5-6M'
+       When TotalChargedAmount > 6000000 and TotalChargedAmount <=7000000 then '6-7M'
+       When TotalChargedAmount > 7000000 and TotalChargedAmount <=8000000 then '7-8M'
+       When TotalChargedAmount > 8000000 and TotalChargedAmount <=9000000 then '8-9M'
+       When TotalChargedAmount > 9000000 and TotalChargedAmount <=10000000 then '9-10M'
+  ELSE '>10M' END as Total_charged_amount_range 
+FROM Base 
+) 
+
+Select 
+   Total_charged_amount_range ,
+   Count(Total_charged_amount_range) as number_of_customer 
+From Rang
+Group by Total_charged_amount_range
+Order by Total_charged_amount_range asc ; 
+
+/*Metric 2: The number of transactions */
+
+WITH Base as (
+   SELECT 
+      f19.customer_id
+      ,Count(1.0*f19.transaction_id) as NumberTransaction 
+  FROM [dbo].[fact_transaction_2019]  f19 
+    Join [dbo].[dim_status] st   On st.status_id = f19.status_id 
+    Join [dbo].[dim_scenario] sc  On sc.[scenario_id] = f19.[scenario_id]
+  WHERE st.[status_description] = 'Success' and sc.transaction_type = 'Payment'
+  Group by f19.customer_id
+), 
+Trans As (
+  Select 
+     CASE When NumberTransaction >= 0 and NumberTransaction <= 10 then '0-10' 
+       When NumberTransaction > 10 and NumberTransaction <=20 then '10-20'
+       When NumberTransaction > 20 and NumberTransaction <=30 then '20-30'
+       When NumberTransaction > 30 and NumberTransaction <=40 then '30-40'
+       When NumberTransaction > 40 and NumberTransaction <=50 then '40-50'
+       When NumberTransaction > 50 and NumberTransaction <=60 then '50-60'
+       When NumberTransaction > 60 and NumberTransaction <=70 then '60-70'
+       When NumberTransaction > 70 and NumberTransaction <=80 then '70-80'
+       When NumberTransaction > 80 and NumberTransaction <=90 then '80-90'
+       When NumberTransaction > 90 and NumberTransaction <=100 then '90-100'
+     ELSE '>100' END as Total_txn_range  
+FROM Base 
+)
+
+Select 
+   Total_txn_range ,
+   Count(Total_txn_range) as number_of_customer 
+From Trans 
+Group by Total_txn_range ; 
+
+/* Metric 3: The number of payment categories */ 
+WITH Base as (
+   SELECT 
+      f19.customer_id
+      ,Count(distinct sc.category) as NoPayCategory 
+  FROM [dbo].[fact_transaction_2019]  f19 
+    Join [dbo].[dim_status] st   On st.status_id = f19.status_id 
+    Join [dbo].[dim_scenario] sc  On sc.[scenario_id] = f19.[scenario_id]
+  WHERE st.[status_description] = 'Success' and sc.transaction_type = 'Payment'
+  Group by f19.customer_id
+) 
+
+Select NoPayCategory as no_payment_category, 
+     count(NoPayCategory) as Number_of_customer  
+From Base 
+Group by NoPayCategory 
+
+Select * from [dbo].[dim_scenario]
+/*Metric 4: The number of payment scenarios */ 
+WITH Base as (
+   SELECT 
+      f19.customer_id
+      ,Count(distinct f19.scenario_id) as NumberScenarios
+  FROM [dbo].[fact_transaction_2019]  f19 
+    Join [dbo].[dim_status] st   On st.status_id = f19.status_id 
+    Join [dbo].[dim_scenario] sc  On sc.[scenario_id] = f19.[scenario_id]
+  WHERE st.[status_description] = 'Success' and sc.transaction_type = 'Payment'
+  Group by f19.customer_id
+)
+Select NumberScenarios as no_payment_scenario, 
+     count(NumberScenarios) as Number_of_customer  
+From Base 
+Group by NumberScenarios 
+;
+
