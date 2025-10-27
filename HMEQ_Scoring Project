@@ -1,0 +1,265 @@
+# ===================================================== NGUYEN DUY THAI========
+# PROJECT: Create Credit Scoring Model with WoE, IV, Feature selection, Overfitting Diagnostic and Markdown report
+# Dataset: hmed.csv (BAD in (0, 1), where 0 is bad customer and 1 is good one / this dataset is downloaded from Kaggle 
+# Python script via VS Code
+
+# STEP 1: SETTING UP THE ENVIRONMENT WITH RELEVANT LIBRARIES 
+
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.impute import SimpleImputer
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import roc_auc_score, roc_curve
+import xgboost as xgb
+import matplotlib.pyplot as plt
+import warnings
+warnings.filterwarnings("ignore")
+
+df = pd.read_csv(r"C:\Users\Hp\Downloads\hmeq.csv", encoding = "utf-8")  # Read the csv file from my personal computer 
+print(f"Dataset shape : {df.shape[0]} rows, {df.shape[1]} columns") # to find how many columns and rows 
+print(df.head()) # look at 5 top rows 
+
+#STEP 2: SET UP TARGET (DEPENDENT VARIABLE)
+target = "BAD"       # 1 = bad customer, 0 = good one
+X = df.drop(columns=[target])
+y = df[target]
+
+# STEP 3: DEFINE FUNCION TO COMPUTE "Weight of Evidence" (WoE) & Information Value (IV)
+
+def compute_woe_iv(df, feature, target, bins=10):
+    """
+    Compute WoE & IV for one variable/feature (numeric hoặc categorical).
+    - df: DataFrame
+    - feature: column name
+    - target: tagert columns (0/1)
+    - bins: number of bin (only apply to numeric features)
+    """
+    temp = df[[feature, target]].copy()
+
+    # In upt missing values to avoid error 
+    temp[feature] = temp[feature].fillna(-999999)
+
+    # Numeric → Using qcut to seperate bins  
+    try:
+        if pd.api.types.is_numeric_dtype(temp[feature]):
+            temp["bin"] = pd.qcut(temp[feature], bins, duplicates="drop")
+        else:
+            temp["bin"] = temp[feature].astype(str)
+    except Exception:
+        temp["bin"] = pd.cut(temp[feature], bins, duplicates="drop")
+
+    # Calculate number of good/bad in each bin
+    grouped = temp.groupby("bin")[target].agg(["count", "sum"])
+    grouped.columns = ["total", "bad"]
+    grouped["good"] = grouped["total"] - grouped["bad"]
+
+    # Calculate %good, %bad, WoE, IV
+    grouped["%bad"] = grouped["bad"] / grouped["bad"].sum()
+    grouped["%good"] = grouped["good"] / grouped["good"].sum()
+    grouped["WoE"] = np.log((grouped["%good"] + 1e-6) / (grouped["%bad"] + 1e-6))
+    grouped["IV"] = (grouped["%good"] - grouped["%bad"]) * grouped["WoE"]
+
+    # Tổng IV của biến / Total IV of variables 
+    iv_value = grouped["IV"].sum()
+
+    return grouped, iv_value
+
+# Compute IV for all variables
+
+print("\n📊 Computing IV for all features ...")
+iv_dict = {}
+for col in X.columns:
+    try:
+        _, iv = compute_woe_iv(df, col, target)
+        iv_dict[col] = iv
+    except Exception as e:
+        print(f"⚠️ Skipped {col}: {e}")
+
+# To create table of IV
+iv_df = pd.DataFrame(list(iv_dict.items()), columns=["Variable", "IV"]).sort_values("IV", ascending=False)
+print("\n📈 Information Value Summary:")
+print(iv_df)
+
+# Select strong IV (IV ≥ 0.1)
+selected_features = iv_df.loc[iv_df["IV"] >= 0.1, "Variable"].tolist()
+print(f"\n✅ Selected features (IV ≥ 0.1): {selected_features}")
+
+# STEP 4: Preprocessing pipelines (numeric + categorical)
+
+num_cols = X[selected_features].select_dtypes(include=["int64", "float64"]).columns.tolist()
+cat_cols = X[selected_features].select_dtypes(include=["object", "category"]).columns.tolist()
+
+numeric_transformer = Pipeline([
+    ("impute", SimpleImputer(strategy="median")),
+    ("scale", StandardScaler())
+])
+
+categorical_transformer = Pipeline([
+    ("impute", SimpleImputer(strategy="constant", fill_value="MISSING")),
+    ("onehot", OneHotEncoder(handle_unknown="ignore", sparse_output=False))  # ✅ version mới của sklearn
+])
+
+preprocessor = ColumnTransformer([
+    ("num", numeric_transformer, num_cols),
+    ("cat", categorical_transformer, cat_cols)
+])
+
+# Split dataset into train/test
+
+X = X[selected_features]
+X_train, X_test, y_train, y_test = train_test_split(X, y, stratify=y, test_size=0.25, random_state=42)
+
+# Train Logistic Regression model
+
+logpipe = Pipeline([
+    ("pre", preprocessor),
+    ("clf", LogisticRegression(max_iter=1000, class_weight="balanced", solver="liblinear"))
+])
+print("\n🚀 Training Logistic Regression ...")
+logpipe.fit(X_train, y_train)
+log_probs = logpipe.predict_proba(X_test)[:, 1]
+log_auc = roc_auc_score(y_test, log_probs)
+
+
+# Train XGBoost model
+
+xgb_model = Pipeline([
+    ("pre", preprocessor),
+    ("xgb", xgb.XGBClassifier(
+        n_estimators=300,
+        learning_rate=0.05,
+        max_depth=4,
+        subsample=0.8,
+        colsample_bytree=0.8,
+        eval_metric="auc",
+        random_state=42,
+        use_label_encoder=False))
+])
+print("\n🚀 Training XGBoost ...")
+xgb_model.fit(X_train, y_train)
+xgb_probs = xgb_model.predict_proba(X_test)[:, 1]
+xgb_auc = roc_auc_score(y_test, xgb_probs)
+
+# STEP 5: Compute KS statistic & compare models
+
+def ks_statistic(y_true, y_pred):
+    fpr, tpr, _ = roc_curve(y_true, y_pred)
+    return max(tpr - fpr)
+
+ks_log = ks_statistic(y_test, log_probs)
+ks_xgb = ks_statistic(y_test, xgb_probs)
+
+# Plot ROC curve
+
+fpr1, tpr1, _ = roc_curve(y_test, log_probs)
+fpr2, tpr2, _ = roc_curve(y_test, xgb_probs)
+plt.figure(figsize=(7,5))
+plt.plot(fpr1, tpr1, label=f"Logistic (AUC={log_auc:.3f}, KS={ks_log:.3f})")
+plt.plot(fpr2, tpr2, label=f"XGBoost (AUC={xgb_auc:.3f}, KS={ks_xgb:.3f})")
+plt.plot([0,1],[0,1],'--', color='gray')
+plt.xlabel("False Positive Rate")
+plt.ylabel("True Positive Rate")
+plt.title("ROC Curve Comparison")
+plt.legend()
+plt.grid(True)
+plt.tight_layout()
+plt.savefig("roc_curve.png")
+plt.show()
+
+# ==============================================================
+# STEP 7: Overfitting Diagnostic (Train/Test/CV AUC Comparison)
+
+from sklearn.model_selection import cross_val_score, StratifiedKFold
+
+print("\n🔍 Running overfitting diagnostics ...")
+
+# Calculate AUC of train data
+train_probs = xgb_model.predict_proba(X_train)[:, 1]
+train_auc = roc_auc_score(y_train, train_probs)
+
+# AUC test (xgb_auc)
+diff_auc = train_auc - xgb_auc
+
+# 5-fold Cross-validation
+cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+cv_scores = cross_val_score(xgb_model, X, y, cv=cv, scoring="roc_auc")
+cv_mean, cv_std = cv_scores.mean(), cv_scores.std()
+
+# Show to the screen
+print(f"AUC (Train): {train_auc:.4f}")
+print(f"AUC (Test):  {xgb_auc:.4f}")
+print(f"Δ AUC (Train - Test): {diff_auc:.4f}")
+print(f"AUC (5-fold CV): {cv_mean:.4f} ± {cv_std:.4f}")
+
+
+#  Creat warning if overfitting
+
+if diff_auc > 0.05:
+    overfit_status = "⚠️ Potential overfitting detected (AUC train >> test)"
+elif diff_auc < -0.01:
+    overfit_status = "⚠️ Possible underfitting (AUC test > train)"
+else:
+    overfit_status = "✅ Model generalizes well (no strong overfit signs)"
+
+# --------------------------------------------------------------
+#  Add to Markdown report
+# If report_md not exist
+if "report_md" not in locals():
+    report_md = ""
+
+# If report_path not exist
+if "report_path" not in locals():
+    report_path = "credit_scoring_report.md"
+
+# Adding overfitting diagnostic to the report
+report_md += f"""
+
+---
+
+## Overfitting Diagnostic
+
+| Metric | Value |
+|:--------|:-------:|
+| AUC (Train) | {train_auc:.4f} |
+| AUC (Test)  | {xgb_auc:.4f} |
+| Δ AUC (Train - Test) | {diff_auc:.4f} |
+| 5-Fold CV AUC | {cv_mean:.4f} ± {cv_std:.4f} |
+
+**Status:** {overfit_status}
+
+---
+
+## Interpretation
+- ΔAUC > 0.05 → Possible overfitting ⚠️  
+- ΔAUC ≈ 0 → Stable generalization ✅  
+- ΔAUC < 0 → Possible underfitting 🧊  
+
+"""
+
+# --------------------------------------------------------------
+#  Optional: compare AUC (train / test / CV)
+
+plt.figure(figsize=(5,4))
+plt.bar(["Train", "Test", "CV Mean"], [train_auc, xgb_auc, cv_mean])
+plt.ylabel("AUC")
+plt.ylim(0.5, 1)
+plt.title("AUC Comparison (Train vs Test vs Cross-Validation)")
+plt.grid(axis='y', linestyle='--', alpha=0.7)
+plt.tight_layout()
+plt.savefig("auc_comparison.png")
+plt.close()
+
+report_md += "\n\n![AUC Comparison](auc_comparison.png)\n"
+
+# --------------------------------------------------------------
+#  Save the updated Markdown report
+
+with open(report_path, "w", encoding="utf-8") as f:
+    f.write(report_md)
+
+print(f"✅ Overfitting diagnostics appended successfully → {report_path}")
+print(f"{overfit_status}")
