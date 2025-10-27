@@ -1,6 +1,6 @@
 # ===================================================== NGUYEN DUY THAI========
 # PROJECT: Create Credit Scoring Model with WoE, IV, Feature selection, Overfitting Diagnostic and Markdown report
-# Dataset: hmed.csv (BAD in (0, 1), where 0 is bad customer and 1 is good one / this dataset is downloaded from Kaggle 
+# Dataset: hmeq.csv (BAD in (0, 1), where 0 is bad customer and 1 is good one / this dataset is downloaded from Kaggle 
 # Python script via VS Code
 
 # STEP 1: SETTING UP THE ENVIRONMENT WITH RELEVANT LIBRARIES 
@@ -263,3 +263,4 @@ with open(report_path, "w", encoding="utf-8") as f:
 
 print(f"✅ Overfitting diagnostics appended successfully → {report_path}")
 print(f"{overfit_status}")
+
