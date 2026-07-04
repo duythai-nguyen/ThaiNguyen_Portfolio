@@ -100,7 +100,7 @@ numeric_transformer = Pipeline([
 
 categorical_transformer = Pipeline([
     ("impute", SimpleImputer(strategy="constant", fill_value="MISSING")),
-    ("onehot", OneHotEncoder(handle_unknown="ignore", sparse_output=False))  # ✅ version mới của sklearn
+    ("onehot", OneHotEncoder(handle_unknown="ignore", sparse_output=False))  # version mới của sklearn
 ])
 
 preprocessor = ColumnTransformer([
@@ -199,11 +199,11 @@ print(f"AUC (5-fold CV): {cv_mean:.4f} ± {cv_std:.4f}")
 #  Creat warning if overfitting
 
 if diff_auc > 0.05:
-    overfit_status = "⚠️ Potential overfitting detected (AUC train >> test)"
+    overfit_status = "Potential overfitting detected (AUC train >> test)"
 elif diff_auc < -0.01:
-    overfit_status = "⚠️ Possible underfitting (AUC test > train)"
+    overfit_status = "Possible underfitting (AUC test > train)"
 else:
-    overfit_status = "✅ Model generalizes well (no strong overfit signs)"
+    overfit_status = "Model generalizes well (no strong overfit signs)"
 
 # --------------------------------------------------------------
 #  Add to Markdown report
@@ -234,9 +234,9 @@ report_md += f"""
 ---
 
 ## Interpretation
-- ΔAUC > 0.05 → Possible overfitting ⚠️  
-- ΔAUC ≈ 0 → Stable generalization ✅  
-- ΔAUC < 0 → Possible underfitting 🧊  
+- ΔAUC > 0.05 → Possible overfitting 
+- ΔAUC ≈ 0 → Stable generalization  
+- ΔAUC < 0 → Possible underfitting  
 
 """
 
